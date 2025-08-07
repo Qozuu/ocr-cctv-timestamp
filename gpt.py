@@ -1,6 +1,10 @@
 import cv2
+import pytesseract
 import numpy as np
 from matplotlib import pyplot as plt
+
+# Tentukan path Tesseract
+pytesseract.pytesseract.tesseract_cmd = r"D:/Program Files/Tesseract-OCR/tesseract.exe"
 
 def normalize_patch(img, w, h):
     """ Normalize the patch to have zero mean. """
@@ -9,6 +13,9 @@ def normalize_patch(img, w, h):
 
 def match_pattern(roi, pattern):
     """ Perform normalized cross-correlation matching. """
+    if pattern.shape[0] > roi.shape[0] or pattern.shape[1] > roi.shape[1]:
+        print("Pola lebih besar dari ROI! Resize pola...")
+        pattern = cv2.resize(pattern, (roi.shape[1], roi.shape[0])) 
     result = cv2.matchTemplate(roi, pattern, method=cv2.TM_CCOEFF_NORMED)
     return result
 
@@ -27,14 +34,15 @@ def detect_timestamp(roi, patterns, threshold=0.5):
     """ Detect characters in the ROI using pattern matching. """
     h, w = list(patterns.values())[0].shape
     detections = []
-
     for char, pattern in patterns.items():
         match = match_pattern(roi, pattern)
         loc = np.where(match >= threshold)
         for pt in zip(*loc[::-1]):
             detections.append((pt, char, match[pt[1], pt[0]]))
-
-    return sorted(detections, key=lambda x: (x[0][1], x[0][0]))
+    
+    # Menyusun teks berdasarkan deteksi karakter
+    detected_text = ''.join([char for _, char, _ in sorted(detections, key=lambda x: (x[0][1], x[0][0]))])
+    return detected_text, detections
 
 def visualize_matches(roi, detections):
     """ Display matched characters on the ROI. """
@@ -47,16 +55,26 @@ def visualize_matches(roi, detections):
     plt.axis("off")
     plt.show()
 
-# ==== Contoh penggunaan ====
-# 1. Ambil ROI dari frame video CCTV
-# 2. Load font pattern dari direktori ("fonts/")
-# 3. Jalankan matching dan visualisasi
-
+# ====== Contoh Penggunaan ======
+# Membaca gambar
 frame = cv2.imread('cctv.jpg', 0)
 
-x, y, w, h = 50, 50, 400, 100
-roi = frame[y:y+h, x:x+w]  # Tentukan ROI secara manual
+# Tentukan ROI secara manual (jika perlu)
+x, y, w, h = 0, 0, 600, 100
+roi = frame[y:y+h, x:x+w] # Menggunakan seluruh gambar karena hanya ada timestamp
 
+# Muat pola dari folder
 patterns = load_patterns("fonts")
-results = detect_timestamp(roi, patterns)
+
+# Deteksi timestamp
+detected_text, results = detect_timestamp(roi, patterns)
+print("Detected Text:", detected_text)
+
+# Visualisasi hasil deteksi
 visualize_matches(roi, results)
+
+# Menggunakan Tesseract untuk mengekstrak teks dari ROI yang telah dipotong (timestamp)
+timestamp = pytesseract.image_to_string(roi)
+
+# Menampilkan hasil deteksi teks
+print("Timestamp yang terdeteksi:", timestamp)
